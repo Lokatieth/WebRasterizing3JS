@@ -1,10 +1,8 @@
 
 
-var renderer, camera, material, scene, mesh, gui, hand;
+var renderer, camera, material, scene, mesh, gui, flakon;
 var rotationSpeedX = 0;
 var rotationSpeedZ = 0;
-var currentShaderIndex = 0;
-var oldShaderIndex = 0;
 
 var group = new THREE.Group();
 var typeOfRing = "ovale";
@@ -19,54 +17,17 @@ var vertexShader = [
           "void main()",
            "{",
                "vUv = uv;",
-               "vec4 mvPosition = modelViewMatrix * vec4( position, 1.0);",
-               "gl_Position = projectionMatrix * mvPosition;",
+               "gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
            "}"
          ].join('\n');
 
 // var fragment_shader4 = "uniform float time;uniform vec2 resolution;varying vec2 vUv;void main( void ) {	vec2 position = -1.0 + 2.0 * vUv;	float red = abs( sin( position.x * position.y + time / 5.0 ) );	float green = abs( sin( position.x * position.y + time / 4.0 ) );	float blue = abs( sin( position.x * position.y + time / 3.0 ) );	gl_FragColor = vec4( red, green, blue, 1.0 );}";
 var fragment_shader4 = [
-    "precision mediump float;",
-    "varying vec2 vUv;",
-    "uniform float time;",
-    "float random(float p) {",
-      "return fract(sin(p)*10000.);",
-    "}",
-    "float noise(vec2 p) {",
-      "return random(p.x + p.y*10000.);",
-    "}",
-    "vec2 sw(vec2 p) {return vec2( floor(p.x) , floor(p.y) );}",
-    "vec2 se(vec2 p) {return vec2( ceil(p.x)  , floor(p.y) );}",
-    "vec2 nw(vec2 p) {return vec2( floor(p.x) , ceil(p.y)  );}",
-    "vec2 ne(vec2 p) {return vec2( ceil(p.x)  , ceil(p.y)  );}",
-    "float smoothNoise(vec2 p) {",
-      "vec2 inter = smoothstep(0., 1., fract(p));",
-      "float s = mix(noise(sw(p)), noise(se(p)), inter.x);",
-      "float n = mix(noise(nw(p)), noise(ne(p)), inter.x);",
-      "return mix(s, n, inter.y);",
-      "return noise(nw(p));",
-    "}",
-    "float movingNoise(vec2 p) {",
-      "float total = 0.0;",
-      "total += smoothNoise(p     - time);",
-      "total += smoothNoise(p*2.  + time) / 2.;",
-      "total += smoothNoise(p*4.  - time) / 4.;",
-    "  total += smoothNoise(p*8.  + time) / 8.;",
-      "total += smoothNoise(p*16. - time) / 16.;",
-      "total /= 1. + 1./2. + 1./4. + 1./8. + 1./16.;",
-      "return total;",
-    "}",
-    "float nestedNoise(vec2 p) {",
-      "float x = movingNoise(p);",
-      "float y = movingNoise(p + 100.);",
-      "return movingNoise(p + vec2(x, y));",
-    "}",
-    "void main() {",
-      "vec2 p = vUv * 6.;",
-      "float brightness = nestedNoise(p);",
-      "gl_FragColor.rgb = vec3(brightness);",
-      "gl_FragColor.a = 1.;",
-    "}"
+  "varying vec2 vUv;",
+  "void main(){",
+  "gl_FragColor = vec4(vec3(vUv, 0.), 1.);",
+  "}"
+
 ].join("\n");
 var fragment_shader3 = [
       "uniform float time;",
@@ -128,8 +89,8 @@ var fragment_shader1 = [
 				"if(i<0.0) i+=4.0;",
 				"if(i>=2.0) i=4.0-i;",
 				"d=r/350.0;",
-				"d+=sin(d*d*8.0)*0.52;",
-				"f=(sin(a*g)+1.0)/2.0;",
+				"d+=cos(d*d*8.0)*0.52;",
+				"f=(cos(a*g)+1.0)/2.0;",
 				"gl_FragColor=vec4(vec3(f*i/1.6,i/2.0+d/13.0,i)*d*p.x+vec3(i/1.3+d/8.0,i/2.0+d/18.0,i)*d*(1.0-p.x),1.0);",
 			"}"
 ].join('\n');
@@ -201,7 +162,6 @@ var fragment_shader1 = [
     gui.add(params, 'shader', { 1: fragment_shader1, 2: fragment_shader2, 3: fragment_shader3, 4: fragment_shader4} ).onFinishChange(function(value){
       shader = value;
       console.log(shader);
-      currentShaderIndex += 1;
       var newniform = (value == fragment_shader2 ? uniforms2 : uniforms1);
 
       mesh.material =   new THREE.ShaderMaterial( {
@@ -278,23 +238,30 @@ var fragment_shader1 = [
     var loadOBJ = function()
     {
       var material = new THREE.MeshStandardMaterial({
-          // map:   loader.load('../Static/Textures/seamless_marble.jpg'),
+          map:   loader.load('../Static/Textures/disturb.jpg'),
           // normalMap: loader.load('../Static/Textures/relief_normale.jpg'),
-          envMap: initBackground(),
+          // envMap: initBackground(),
           // envMap:   loader.load('../Static/Textures/yellow_gold.png'),
           // roughnessMap: loader.load('../Static/Textures/green_glossiness.jpg'),
           // roughnessMap: loader.load('../Static/Textures/green_glossiness.jpg'),
           // roughness: 0.2,
           // reflectivity: 1,
           // envMapIntensity: 2,
-          color: 0xffeb7f,
-          //overdraw: true,
+          // color: 0xffeb7f,
+          // overdraw: true,
         })
-        // material.shading = THREE.FlatShading;
+        // var material =   new THREE.ShaderMaterial( {
+        //     uniforms: uniforms1,
+        //     // uniforms: params[ 0 ][ 1 ],
+        //     vertexShader: vertexShader,
+        //     fragmentShader: fragment_shader4,
+        //     // fragmentShader: params[ 0 ][ 0 ]
+        //     wireframe: true,
+        //   } )
       var manager = new THREE.LoadingManager();
       var ObjLoader = new THREE.OBJLoader();
-      ObjLoader.load('../Static/Textures/simple.txt', function(object) {
-        hand = object;
+      ObjLoader.load('../Static/Textures/kenza.txt', function(object) {
+        flakon = object;
         object.traverse(function(child) {
           if (child instanceof THREE.Mesh) {
             child.material = material;
@@ -317,18 +284,18 @@ var fragment_shader1 = [
     				var part1 = child.clone();
     				thickness.add(part1);
 
-    				var part2 = child.clone();
-    				part2.rotateX((180 * Math.PI) / 180);
-    				thickness.add(part2);
-
-    				var part3 = child.clone();
-    				part3.rotateY((180 * Math.PI) / 180);
-    				thickness.add(part3);
-
-    				var part4 = child.clone();
-    				part4.rotateX((180 * Math.PI) / 180);
-    				part4.rotateY((180 * Math.PI) / 180);
-    				thickness.add(part4);
+    				// var part2 = child.clone();
+    				// part2.rotateX((180 * Math.PI) / 180);
+    				// thickness.add(part2);
+            //
+    				// var part3 = child.clone();
+    				// part3.rotateY((180 * Math.PI) / 180);
+    				// thickness.add(part3);
+            //
+    				// var part4 = child.clone();
+    				// part4.rotateX((180 * Math.PI) / 180);
+    				// part4.rotateY((180 * Math.PI) / 180);
+    				// thickness.add(part4);
 
             //group.add(part1, part2, part3, part4);
 
@@ -339,9 +306,65 @@ var fragment_shader1 = [
         scene.add(group);
 
 
+        return object;
       });
-
     };
+
+
+
+
+    var loadflakonOBJ = function()
+    {
+        var material =   new THREE.ShaderMaterial( {
+            uniforms: uniforms1,
+            vertexShader: vertexShader,
+            fragmentShader: fragment_shader4,
+            // wireframe: true,
+
+          } )
+
+          // var material = new THREE.MeshStandardMaterial({
+          //     // map:   loader.load('../Static/Textures/seamless_marble.jpg'),
+          //     // normalMap: loader.load('../Static/Textures/relief_normale.jpg'),
+          //     // envMap: initBackground(),
+          //     // envMap:   loader.load('../Static/Textures/yellow_gold.png'),
+          //     // roughnessMap: loader.load('../Static/Textures/green_glossiness.jpg'),
+          //     // roughnessMap: loader.load('../Static/Textures/green_glossiness.jpg'),
+          //     // roughness: 0.2,
+          //     // reflectivity: 1,
+          //     // envMapIntensity: 2,
+          //     // color: 0xffeb7f,
+          //     //overdraw: true,
+          //     wireframe: true,
+          //   })
+      var manager = new THREE.LoadingManager();
+      var ObjLoader = new THREE.OBJLoader();
+      ObjLoader.load('../Static/Textures/kenza.obj', function(object) {
+        flakon = object;
+        object.traverse(function(child) {
+          if (child instanceof THREE.Mesh) {
+            child.material = material;
+            // /*
+            child.geometry.computeVertexNormals();
+            child.rotation.y = 0;
+            // child.rotation.x = -Math.PI / 2;
+            // child.rotation.z = Math.PI / 2;
+            child.position.x = 0;
+            child.position.y = 0;
+            child.scale *= new THREE.Vector3(0.2,0.2,0.2);
+            scene.add(object);
+            // group.add(object);
+          }
+        });
+        scene.add(group);
+      });
+    };
+
+
+
+
+
+
 
     uniforms1 = {
 			time:       { value: 1.0 },
@@ -350,8 +373,12 @@ var fragment_shader1 = [
 		uniforms2 = {
 			time:       { value: 1.0 },
 			resolution: { value: new THREE.Vector2() },
-			texture:    { value: new THREE.TextureLoader().load("../Static/Textures/disturb.jpg") }
+      texture:    { value: new THREE.TextureLoader().load("../Static/Textures/disturb.jpg") }
+			// nMap:    { value: new THREE.TextureLoader().load("../Static/Textures/relief_normale.jpg") }
 		};
+    uniforms4 = {
+
+    };
       uniforms2.texture.value.wrapS = uniforms2.texture.value.wrapT = THREE.RepeatWrapping;
 		  var params = [
         [ 'fragment_shader4', uniforms1 ],
@@ -377,57 +404,67 @@ var fragment_shader1 = [
 
 
 
-    // loadOBJ();
 
     //
-    createObject(
-      new THREE.CubeGeometry(20, 20, 20),
-      new THREE.MeshStandardMaterial({
-        map:   loader.load('../Static/Textures/relief.jpg'),
-        normalMap: loader.load('../Static/Textures/relief_normale.jpg'),
-        color: 0xffffff,
-      }),
-      [30, 0, 0]
-    );
-
-    createObject(
-      new THREE.CubeGeometry(20, 20, 20),
-      new THREE.MeshStandardMaterial({
-        map:   loader.load('../Static/Textures/relief.jpg'),
-        normalMap: loader.load('../Static/Textures/relief_normale.jpg'),
-        envMap: initBackground(),
-        // color: 0xffffff,
-        roughness: 0.2,
-        envMapIntensity: 2,
-      }),
-      [-30, 0, 0]
-    );
+    // createObject(
+    //   new THREE.CubeGeometry(20, 20, 20),
+    //   new THREE.MeshStandardMaterial({
+    //     map:   loader.load('../Static/Textures/relief.jpg'),
+    //     normalMap: loader.load('../Static/Textures/relief_normale.jpg'),
+    //     color: 0xffffff,
+    //   }),
+    //   [30, 0, 0]
+    // );
+    //
+    // createObject(
+    //   new THREE.CubeGeometry(20, 20, 20),
+    //   new THREE.MeshStandardMaterial({
+    //     map:   loader.load('../Static/Textures/relief.jpg'),
+    //     normalMap: loader.load('../Static/Textures/relief_normale.jpg'),
+    //     envMap: initBackground(),
+    //     // color: 0xffffff,
+    //     roughness: 0.2,
+    //     envMapIntensity: 2,
+    //   }),
+    //   [-30, 0, 0]
+    // );
     createObject(
       new THREE.CubeGeometry(20, 20, 20),
       new THREE.ShaderMaterial( {
         uniforms: uniforms1,
         // uniforms: params[ 0 ][ 1 ],
         vertexShader: vertexShader,
-        fragmentShader: shader
+        fragmentShader: fragment_shader4
         // fragmentShader: params[ 0 ][ 0 ]
       } ),
-      [0, 0, 0]
+      [-30, 0, 0]
     );
 
+    // createObject(
+    //   new THREE.TetrahedronGeometry(10, 2),
+    //   new THREE.ShaderMaterial( {
+    //     uniforms: uniforms1,
+    //     // uniforms: params[ 0 ][ 1 ],
+    //     vertexShader: vertexShader,
+    //     fragmentShader: fragment_shader1
+    //     // fragmentShader: params[ 0 ][ 0 ]
+    //   } ),
+    //   [0, 0, 0]
+    // );
+
+
+
+    loadflakonOBJ();
 
     window.addEventListener( 'resize', onWindowResize, false );
   }
 
-  // var controls = new THREE.OrbitControls( camera );
-	// controls.minDistance = 1;
-	// controls.maxDistance = 1000;
+  var controls = new THREE.OrbitControls( camera );
+	controls.minDistance = 1;
+	controls.maxDistance = 1000;
 
   function animate()
   {
-    if (currentShaderIndex != oldShaderIndex)
-    {
-      shader = shader
-    }
     hideAll();
     showRing(typeOfRing, ringThickness);
     // controls.update();
