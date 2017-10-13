@@ -5,7 +5,7 @@ var rotationSpeedX = 0;
 var rotationSpeedZ = 0;
 
 var group = new THREE.Group();
-var typeOfRing = "ovale";
+var typeOfRing = "demi_jonc";
 var ringThickness = "3"
 // var shaderMaterial = new THREE.shaderMaterial
 var uniforms1, uniforms2;
@@ -21,7 +21,27 @@ var vertexShader = [
            "}"
          ].join('\n');
 
-// var fragment_shader4 = "uniform float time;uniform vec2 resolution;varying vec2 vUv;void main( void ) {	vec2 position = -1.0 + 2.0 * vUv;	float red = abs( sin( position.x * position.y + time / 5.0 ) );	float green = abs( sin( position.x * position.y + time / 4.0 ) );	float blue = abs( sin( position.x * position.y + time / 3.0 ) );	gl_FragColor = vec4( red, green, blue, 1.0 );}";
+var vertexShader2 = [
+    "uniform float mRefractionRatio;",
+    "uniform float mFresnelBias;",
+    "uniform float mFresnelScale;",
+    "uniform float mFresnelPower;",
+    "varying vec3 vReflect;",
+    "varying vec3 vRefract[3];",
+    "varying float vReflectionFactor;",
+    "void main() {",
+	     "vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );",
+	     "vec4 worldPosition = modelMatrix * vec4( position, 1.0 );",
+	     "vec3 worldNormal = normalize( mat3( modelMatrix[0].xyz, modelMatrix[1].xyz, modelMatrix[2].xyz ) * normal );",
+	     "vec3 I = worldPosition.xyz - cameraPosition;",
+	     "vReflect = reflect( I, worldNormal );",
+	     "vRefract[0] = refract( normalize( I ), worldNormal, mRefractionRatio );",
+	     "vRefract[1] = refract( normalize( I ), worldNormal, mRefractionRatio * 0.99 );",
+	     "vRefract[2] = refract( normalize( I ), worldNormal, mRefractionRatio * 0.98 );",
+	     "vReflectionFactor = mFresnelBias + mFresnelScale * pow( 1.0 + dot( normalize( I ), worldNormal ), mFresnelPower );",
+	     "gl_Position = projectionMatrix * mvPosition;",
+    "}",
+].join("\n")
 var fragment_shader4 = [
   "varying vec2 vUv;",
   "void main(){",
@@ -29,19 +49,19 @@ var fragment_shader4 = [
   "}"
 
 ].join("\n");
-var fragment_shader3 = [
-      "uniform float time;",
-			"uniform vec2 resolution;",
-			"varying vec2 vUv;",
-			"void main( void ) {",
-			"vec2 position = vUv;",
-			"float color = 0.0;",
-			"color += sin( position.x * cos( time / 15.0 ) * 80.0 ) + cos( position.y * cos( time / 15.0 ) * 10.0 );",
-			"color += sin( position.y * sin( time / 10.0 ) * 40.0 ) + cos( position.x * sin( time / 25.0 ) * 40.0 );",
-			"color += sin( position.x * sin( time / 5.0 ) * 10.0 ) + sin( position.y * sin( time / 35.0 ) * 80.0 );",
-			"color *= sin( time / 10.0 ) * 0.5;",
-			"gl_FragColor = vec4( vec3( color, color * 0.5, sin( color + time / 3.0 ) * 0.75 ), 1.0 );",
-			"}"
+var  fragment_shader3 = [
+  "uniform samplerCube tCube;",
+  "varying vec3 vReflect;",
+  "varying vec3 vRefract[3];",
+  "varying float vReflectionFactor;",
+  "void main() {",
+    "vec4 reflectedColor = textureCube( tCube, vec3( -vReflect.x, vReflect.yz ) );",
+    "vec4 refractedColor = vec4( 1.0 );",
+    "refractedColor.r = textureCube( tCube, vec3( -vRefract[0].x, vRefract[0].yz ) ).r;",
+    "refractedColor.g = textureCube( tCube, vec3( -vRefract[1].x, vRefract[1].yz ) ).g;",
+    "refractedColor.b = textureCube( tCube, vec3( -vRefract[2].x, vRefract[2].yz ) ).b;",
+    "gl_FragColor = mix( refractedColor, reflectedColor, clamp( vReflectionFactor, 0.0, 1.0 ) );",
+  "}"
 ].join('\n');
 
 var fragment_shader2 = [
@@ -105,7 +125,20 @@ var fragment_shader1 = [
 
 
 
+    function getDiamondCube()
+    {
+      var path = '../Static/Textures/diamond';
+      var format = '.png';
+      var urls = [
+        path + '_px' + format, path + '_nx' + format,
+        path + '_py' + format, path + '_ny' + format,
+        path + '_pz' + format, path + '_nz' + format
+        ];
+      var diamondCube = new THREE.CubeTextureLoader().load( urls );
+      diamondCube.format = THREE.RGBFormat;
 
+      return diamondCube;
+    }
 
     function initBackground()
     {
@@ -160,15 +193,33 @@ var fragment_shader1 = [
       ringThickness = value;
     });
     gui.add(params, 'shader', { 1: fragment_shader1, 2: fragment_shader2, 3: fragment_shader3, 4: fragment_shader4} ).onFinishChange(function(value){
-      shader = value;
-      console.log(shader);
-      var newniform = (value == fragment_shader2 ? uniforms2 : uniforms1);
+      newFragmentShader = value;
+      console.log(newFragmentShader);
 
-      mesh.material =   new THREE.ShaderMaterial( {
-          uniforms: newniform,
+      switch (newFragmentShader) {
+
+        case fragment_shader1:
+          newUniform = uniforms1;
+          newVertexShader = vertexShader;
+          break;
+        case fragment_shader2:
+          newUniform = uniforms2;
+          newVertexShader = vertexShader;
+          break;
+        case fragment_shader3:
+          newUniform = uniforms3;
+          newVertexShader = vertexShader2;
+          break;
+        case fragment_shader4:
+          newUniform = uniforms1;
+          newVertexShader = vertexShader;
+          break;
+      }
+      mesh.material =  new THREE.ShaderMaterial( {
+          uniforms: newUniform,
           // uniforms: params[ 0 ][ 1 ],
-          vertexShader: vertexShader,
-          fragmentShader: shader
+          vertexShader: newVertexShader,
+          fragmentShader: newFragmentShader
           // fragmentShader: params[ 0 ][ 0 ]
         } )
     });
@@ -185,12 +236,16 @@ var fragment_shader1 = [
     // scene.add( bluePunctualLight );
     //
     // var greenPunctualLight = new THREE.PointLight(0x00ff00, 1, 200);
-    // greenPunctualLight.position.set(-35, -35, 0);
+    // greenPunctualLight.position.set(0, 50, 0);
     // scene.add( greenPunctualLight );
-    //
-    var whitePunctualLight = new THREE.PointLight(0xffffff, 1, 200);
-    whitePunctualLight.position.set(0, 0, 100);
+
+    var whitePunctualLight = new THREE.PointLight(0xff0000, 1, 200);
+    whitePunctualLight.position.set(-100, 0, 100);
     scene.add( whitePunctualLight );
+
+    var whitePunctualLight2 = new THREE.PointLight(0xffffff, 1, 200);
+    whitePunctualLight2.position.set(100, 0, 100);
+    scene.add( whitePunctualLight2 );
 
     var ambientLight = new THREE.AmbientLight(0xffffff, 0)
     scene.add( ambientLight );
@@ -213,8 +268,8 @@ var fragment_shader1 = [
     loader.load(
       '../Static/Textures/',
       function ( texture ) {
-        var material = new THREE.MeshBasicMaterial( {
-          map: texture
+        var material = new THREE.MeshPhongMaterial( {
+          // map: texture
         } );
       },
     );
@@ -227,7 +282,7 @@ var fragment_shader1 = [
     scene = new THREE.Scene();
 
     camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 10000);
-    camera.position.set(0, 0, 70);
+    camera.position.set(0, 0, 100);
     scene.add(camera);
 
     initLights();
@@ -237,30 +292,31 @@ var fragment_shader1 = [
 
     var loadOBJ = function()
     {
-      var material = new THREE.MeshStandardMaterial({
-          map:   loader.load('../Static/Textures/disturb.jpg'),
-          // normalMap: loader.load('../Static/Textures/relief_normale.jpg'),
-          // envMap: initBackground(),
-          // envMap:   loader.load('../Static/Textures/yellow_gold.png'),
-          // roughnessMap: loader.load('../Static/Textures/green_glossiness.jpg'),
-          // roughnessMap: loader.load('../Static/Textures/green_glossiness.jpg'),
-          // roughness: 0.2,
-          // reflectivity: 1,
-          // envMapIntensity: 2,
-          // color: 0xffeb7f,
-          // overdraw: true,
-        })
-        // var material =   new THREE.ShaderMaterial( {
-        //     uniforms: uniforms1,
-        //     // uniforms: params[ 0 ][ 1 ],
-        //     vertexShader: vertexShader,
-        //     fragmentShader: fragment_shader4,
-        //     // fragmentShader: params[ 0 ][ 0 ]
-        //     wireframe: true,
-        //   } )
+      // var material = new THREE.MeshStandardMaterial({
+      //     // map:   loader.load('../Static/Textures/disturb.jpg'),
+      //     // normalMap: loader.load('../Static/Textures/relief_normale.jpg'),
+      //     envMap: initBackground(),
+      //     // envMap:   loader.load('../Static/Textures/yellow_gold.png'),
+      //     // roughnessMap: loader.load('../Static/Textures/green_glossiness.jpg'),
+      //     // roughnessMap: loader.load('../Static/Textures/green_glossiness.jpg'),
+      //     roughness: 0,
+      //     // reflectivity: 1,
+      //     // envMapIntensity: 2,
+      //     // color: 0xffeb7f,
+      //     // overdraw: true,
+      //   })
+        // material.envMap.mapping = THREE.SphericalReflectionMapping;
+        var material =   new THREE.ShaderMaterial( {
+            uniforms: uniforms3,
+            // uniforms: params[ 0 ][ 1 ],
+            vertexShader: vertexShader2,
+            fragmentShader: fragment_shader3,
+            // fragmentShader: params[ 0 ][ 0 ]
+            // wireframe: true,
+          } )
       var manager = new THREE.LoadingManager();
       var ObjLoader = new THREE.OBJLoader();
-      ObjLoader.load('../Static/Textures/kenza.txt', function(object) {
+      ObjLoader.load('../Static/Textures/simple.txt', function(object) {
         flakon = object;
         object.traverse(function(child) {
           if (child instanceof THREE.Mesh) {
@@ -271,10 +327,10 @@ var fragment_shader1 = [
             // child.material.roughnessMap.repeat.set( 1, 1 );
           // */
             // child.material.roughnessMap.mapping = THREE.SphericalReflectionMapping;
-            // child.material.normalMap.mapping = THREE.SphericalReflectionMapping;
             // child.material.envMap.mapping = THREE.SphericalReflectionMapping;
             //child.geometry.computeVertexNormals();
             child.rotation.y = -Math.PI / 2;
+            // child.position.x = 30;
 
 
 
@@ -284,20 +340,20 @@ var fragment_shader1 = [
     				var part1 = child.clone();
     				thickness.add(part1);
 
-    				// var part2 = child.clone();
-    				// part2.rotateX((180 * Math.PI) / 180);
-    				// thickness.add(part2);
-            //
-    				// var part3 = child.clone();
-    				// part3.rotateY((180 * Math.PI) / 180);
-    				// thickness.add(part3);
-            //
-    				// var part4 = child.clone();
-    				// part4.rotateX((180 * Math.PI) / 180);
-    				// part4.rotateY((180 * Math.PI) / 180);
-    				// thickness.add(part4);
+    				var part2 = child.clone();
+    				part2.rotateX((180 * Math.PI) / 180);
+    				thickness.add(part2);
 
-            //group.add(part1, part2, part3, part4);
+    				var part3 = child.clone();
+    				part3.rotateY((180 * Math.PI) / 180);
+    				thickness.add(part3);
+
+    				var part4 = child.clone();
+    				part4.rotateX((180 * Math.PI) / 180);
+    				part4.rotateY((180 * Math.PI) / 180);
+    				thickness.add(part4);
+
+            group.add(part1, part2, part3, part4);
 
 
 
@@ -359,13 +415,6 @@ var fragment_shader1 = [
         scene.add(group);
       });
     };
-
-
-
-
-
-
-
     uniforms1 = {
 			time:       { value: 1.0 },
 			resolution: { value: new THREE.Vector2() }
@@ -375,6 +424,13 @@ var fragment_shader1 = [
 			resolution: { value: new THREE.Vector2() },
       texture:    { value: new THREE.TextureLoader().load("../Static/Textures/disturb.jpg") }
 			// nMap:    { value: new THREE.TextureLoader().load("../Static/Textures/relief_normale.jpg") }
+		};
+		uniforms3 = {
+			"mRefractionRatio": { value: 1.0  },
+			"mFresnelBias": { value: 0.15 },
+			"mFresnelPower": { value: 2.0 },
+			"mFresnelScale": { value: 1.0 },
+			// "tCube": { value: getDiamondCube() }
 		};
     uniforms4 = {
 
@@ -406,39 +462,26 @@ var fragment_shader1 = [
 
 
     //
+    createObject(
+      new THREE.IcosahedronGeometry(20, 0),
+      new THREE.MeshStandardMaterial({
+        // color: 0xffffff,
+        // roughness: 0.2,
+        // envMapIntensity: 2,
+      }),
+      [0, 0, 0]
+    );
     // createObject(
     //   new THREE.CubeGeometry(20, 20, 20),
-    //   new THREE.MeshStandardMaterial({
-    //     map:   loader.load('../Static/Textures/relief.jpg'),
-    //     normalMap: loader.load('../Static/Textures/relief_normale.jpg'),
-    //     color: 0xffffff,
-    //   }),
-    //   [30, 0, 0]
-    // );
-    //
-    // createObject(
-    //   new THREE.CubeGeometry(20, 20, 20),
-    //   new THREE.MeshStandardMaterial({
-    //     map:   loader.load('../Static/Textures/relief.jpg'),
-    //     normalMap: loader.load('../Static/Textures/relief_normale.jpg'),
-    //     envMap: initBackground(),
-    //     // color: 0xffffff,
-    //     roughness: 0.2,
-    //     envMapIntensity: 2,
-    //   }),
+    //   new THREE.ShaderMaterial( {
+    //     uniforms: uniforms1,
+    //     // uniforms: params[ 0 ][ 1 ],
+    //     vertexShader: vertexShader,
+    //     fragmentShader: fragment_shader4
+    //     // fragmentShader: params[ 0 ][ 0 ]
+    //   } ),
     //   [-30, 0, 0]
     // );
-    createObject(
-      new THREE.CubeGeometry(20, 20, 20),
-      new THREE.ShaderMaterial( {
-        uniforms: uniforms1,
-        // uniforms: params[ 0 ][ 1 ],
-        vertexShader: vertexShader,
-        fragmentShader: fragment_shader4
-        // fragmentShader: params[ 0 ][ 0 ]
-      } ),
-      [-30, 0, 0]
-    );
 
     // createObject(
     //   new THREE.TetrahedronGeometry(10, 2),
@@ -454,18 +497,18 @@ var fragment_shader1 = [
 
 
 
-    loadflakonOBJ();
+    loadOBJ();
 
     window.addEventListener( 'resize', onWindowResize, false );
   }
 
-  var controls = new THREE.OrbitControls( camera );
-	controls.minDistance = 1;
-	controls.maxDistance = 1000;
+  // var controls = new THREE.OrbitControls( camera );
+	// controls.minDistance = 1;
+	// controls.maxDistance = 1000;
 
   function animate()
   {
-    hideAll();
+    // hideAll();
     showRing(typeOfRing, ringThickness);
     // controls.update();
     requestAnimationFrame(animate);
